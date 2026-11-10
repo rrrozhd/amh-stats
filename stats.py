@@ -47,7 +47,9 @@ def compute(numbers, options):
     ]
     if "--median" in options:
         pairs.append(("median", statistics.median(numbers)))
-    # --minmax: append ("min", value) and ("max", value) here.
+    if "--minmax" in options:
+        pairs.append(("min", min(numbers)))
+        pairs.append(("max", max(numbers)))
     # --stdev: append ("stdev", value) here.
     return pairs
 

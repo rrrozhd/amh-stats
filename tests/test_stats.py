@@ -247,5 +247,54 @@ class MedianTest(FileTestCase):
         )
 
 
+class MinMaxTest(FileTestCase):
+    def test_minmax_file_unsorted(self):
+        path = self.write("3\n1\n2\n")
+        self.assertEqual(
+            run_main(["--minmax", path]),
+            (0, "count 3\nmean 2\nmin 1\nmax 3\n", ""),
+        )
+
+    def test_minmax_after_file_and_repeated(self):
+        path = self.write("3\n1\n2\n")
+        self.assertEqual(
+            run_main([path, "--minmax", "--minmax"]),
+            (0, "count 3\nmean 2\nmin 1\nmax 3\n", ""),
+        )
+
+    def test_minmax_stdin_negatives(self):
+        self.assertEqual(
+            run_main(["--minmax"], "-1.5\n-7\n2\n"),
+            (0, "count 3\nmean -2.16667\nmin -7\nmax 2\n", ""),
+        )
+
+    def test_minmax_single_number(self):
+        self.assertEqual(
+            run_main(["--minmax"], "4.25\n"),
+            (0, "count 1\nmean 4.25\nmin 4.25\nmax 4.25\n", ""),
+        )
+
+    def test_minmax_uses_g_format(self):
+        self.assertEqual(
+            run_main(["--minmax"], "0.000001234567\n123456789\n"),
+            (0, "count 2\nmean 6.17284e+07\nmin 1.23457e-06\nmax 1.23457e+08\n", ""),
+        )
+
+    def test_minmax_pairs_are_floats_in_fixed_slot(self):
+        pairs = stats.compute([2.0, -1.0, 5.0], {"--minmax"})
+        self.assertEqual(pairs, [("count", 3), ("mean", 2.0), ("min", -1.0), ("max", 5.0)])
+        self.assertIsInstance(pairs[2][1], float)
+        self.assertIsInstance(pairs[3][1], float)
+
+    def test_minmax_keeps_errors(self):
+        self.assertEqual(run_main(["--minmax"], ""), (1, "", "stats.py: no numbers\n"))
+        self.assertEqual(
+            run_main(["--minmax", "a", "b"]), (2, "", "usage: stats.py [FILE]\n")
+        )
+
+    def test_without_minmax_no_min_max_lines(self):
+        self.assertEqual(run_main([], "3\n1\n2\n"), (0, "count 3\nmean 2\n", ""))
+
+
 if __name__ == "__main__":
     unittest.main()
