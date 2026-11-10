@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -146,6 +147,64 @@ class ComputeRenderTest(unittest.TestCase):
         with redirect_stdout(out):
             stats.render_plain([("count", 3), ("mean", 5 / 3), ("max", 1e20), ("min", 2.0)])
         self.assertEqual(out.getvalue(), "count 3\nmean 1.66667\nmax 1e+20\nmin 2\n")
+
+
+class JsonTest(FileTestCase):
+    def test_json_alone_rounds_mean_and_preserves_count_type(self):
+        code, out, err = run_main(["--json"], "1\n2\n2\n")
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out, '{"count": 3, "mean": 1.66667}\n')
+        result = json.loads(out)
+        self.assertEqual(list(result), ["count", "mean"])
+        self.assertIs(type(result["count"]), int)
+        self.assertIs(type(result["mean"]), float)
+
+    def test_json_whole_and_scientific_values(self):
+        for number, expected in [("3", 3.0), ("0.000000123456789", 1.23457e-7), ("12345678.9", 12345700.0)]:
+            with self.subTest(number=number):
+                code, out, err = run_main(["--json"], number + "\n")
+                self.assertEqual((code, err), (0, ""))
+                self.assertEqual(len(out.splitlines()), 1)
+                result = json.loads(out)
+                self.assertEqual(result, {"count": 1, "mean": expected})
+                self.assertIs(type(result["mean"]), float)
+
+    def test_json_matches_plain_for_requested_options(self):
+        path = self.write("1\n2\n2\n")
+        flags = ["--stdev", "--minmax", "--median"]
+        plain_code, plain, plain_err = run_main([*flags, path])
+        code, out, err = run_main(["--json", path, *flags, "--json"])
+        expected = {key: int(value) if key == "count" else float(value)
+                    for key, value in (line.split() for line in plain.splitlines())}
+        self.assertEqual((code, err), (plain_code, plain_err))
+        self.assertEqual(len(out.splitlines()), 1)
+        result = json.loads(out)
+        self.assertEqual(result, expected)
+        self.assertEqual(list(result), list(expected))
+
+    def test_json_errors_match_plain_and_emit_no_stdout(self):
+        missing = os.path.join(self.dir, "absent.txt")
+        for args, stdin in [([], ""), ([missing], ""), (["a", "b"], ""), ([""], "")]:
+            with self.subTest(args=args):
+                expected = run_main(args, stdin)
+                self.assertEqual(expected[1], "")
+                self.assertEqual(run_main(["--json", *args], stdin), expected)
+
+    def test_json_malformed_line_keeps_error_and_stdout_empty(self):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO("1\nbad\n")), redirect_stdout(out), redirect_stderr(err):
+            with self.assertRaises(SystemExit) as caught:
+                stats.main(["stats.py", "--json"])
+        self.assertEqual(caught.exception.code, "stats.py: line 2: not a number: 'bad'")
+        self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
+
+    def test_json_preserves_default_nonfinite_tokens(self):
+        for number, token in [("nan", "NaN"), ("inf", "Infinity"), ("-inf", "-Infinity")]:
+            with self.subTest(number=number):
+                self.assertEqual(
+                    run_main(["--json"], number + "\n"),
+                    (0, '{"count": 1, "mean": ' + token + '}\n', ""),
+                )
 
 
 class MedianTest(FileTestCase):
