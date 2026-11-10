@@ -1,4 +1,5 @@
 """Summary statistics for numbers, one per line, read from a file or standard input."""
+import json
 import statistics
 import sys
 
@@ -62,6 +63,13 @@ def render_plain(pairs):
             print(f"{key} {value:g}")
 
 
+def render_json(pairs):
+    """Print one object with the same numeric values as the plain output."""
+    values = {key: value if key == "count" else float(format(value, "g"))
+              for key, value in pairs}
+    print(json.dumps(values))
+
+
 def main(argv):
     options, files = parse_args(argv[1:])
     if len(files) > 1:
@@ -81,8 +89,10 @@ def main(argv):
         print("stats.py: no numbers", file=sys.stderr)
         return 1
     pairs = compute(numbers, options)
-    # --json: choose render_json(pairs) here when "--json" is in options.
-    render_plain(pairs)
+    if "--json" in options:
+        render_json(pairs)
+    else:
+        render_plain(pairs)
     return 0
 
 
