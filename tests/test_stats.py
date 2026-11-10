@@ -148,5 +148,48 @@ class ComputeRenderTest(unittest.TestCase):
         self.assertEqual(out.getvalue(), "count 3\nmean 1.66667\nmax 1e+20\nmin 2\n")
 
 
+class StdevTest(FileTestCase):
+    def test_sample_standard_deviation(self):
+        self.assertEqual(
+            run_main(["--stdev"], "2\n4\n4\n4\n5\n5\n7\n9\n"),
+            (0, "count 8\nmean 5\nstdev 2.13809\n", ""),
+        )
+
+    def test_single_number(self):
+        self.assertEqual(
+            run_main(["--stdev"], "-4.25\n"),
+            (0, "count 1\nmean -4.25\nstdev 0\n", ""),
+        )
+        self.assertIsInstance(stats.compute([-4.25], {"--stdev"})[-1][1], float)
+
+    def test_identical_numbers(self):
+        self.assertEqual(
+            run_main(["--stdev"], "3\n3\n3\n"),
+            (0, "count 3\nmean 3\nstdev 0\n", ""),
+        )
+
+    def test_two_numbers_use_sample_denominator(self):
+        self.assertEqual(
+            run_main(["--stdev"], "-1\n1\n"),
+            (0, "count 2\nmean 0\nstdev 1.41421\n", ""),
+        )
+
+    def test_file_and_repeated_flag(self):
+        path = self.write("1\n2\n3\n")
+        self.assertEqual(
+            run_main(["--stdev", path, "--stdev"]),
+            (0, "count 3\nmean 2\nstdev 1\n", ""),
+        )
+
+    def test_g_format_for_small_spread(self):
+        self.assertEqual(
+            run_main(["--stdev"], "0\n0.00000002\n"),
+            (0, "count 2\nmean 1e-08\nstdev 1.41421e-08\n", ""),
+        )
+
+    def test_without_flag_has_no_stdev_line(self):
+        self.assertEqual(run_main([], "-1\n1\n"), (0, "count 2\nmean 0\n", ""))
+
+
 if __name__ == "__main__":
     unittest.main()
