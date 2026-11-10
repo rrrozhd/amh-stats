@@ -1,6 +1,9 @@
 import io
+import itertools
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
@@ -353,6 +356,63 @@ class StdevTest(FileTestCase):
                 self.assertEqual(
                     run_main(["--stdev"], f"{value}\n"),
                     (0, f"count 1\nmean {value}\nstdev 0\n", ""),
+                )
+
+
+class CombinationTest(FileTestCase):
+    def test_every_subset_order_and_file_position(self):
+        data = "9\n2\n4\n4\n5\n5\n7\n4\n"
+        path = self.write(data)
+        options = ("--median", "--minmax", "--stdev")
+        for size in range(len(options) + 1):
+            for selected in itertools.combinations(options, size):
+                expected = {"count": 8, "mean": 5.0}
+                if "--median" in selected:
+                    expected["median"] = 4.5
+                if "--minmax" in selected:
+                    expected.update({"min": 2.0, "max": 9.0})
+                if "--stdev" in selected:
+                    expected["stdev"] = 2.13809
+                plain = "".join(f"{key} {value:g}\n" for key, value in expected.items())
+                for as_json in (False, True):
+                    flags = selected + (("--json",) if as_json else ())
+                    for order in itertools.permutations(flags):
+                        # Exercise stdin and every FILE position, repeating all flags.
+                        cases: list[tuple[tuple[str, ...], str]] = [(order * 2, data)]
+                        for position in range(len(order) + 1):
+                            args = order[:position] + (path,) + order[position:]
+                            cases.append((args + order, ""))
+                        for args, stdin in cases:
+                            with self.subTest(args=args, stdin=bool(stdin)):
+                                code, out, err = run_main(args, stdin)
+                                self.assertEqual((code, err), (0, ""))
+                                if not as_json:
+                                    self.assertEqual(out, plain)
+                                    continue
+                                self.assertEqual(len(out.splitlines()), 1)
+                                result = json.loads(out)
+                                self.assertEqual(result, expected)
+                                self.assertEqual(list(result), list(expected))
+                                self.assertIs(type(result["count"]), int)
+                                for key in result:
+                                    if key != "count":
+                                        self.assertIs(type(result[key]), float)
+
+    def test_all_options_through_cli(self):
+        script = os.path.abspath(stats.__file__)
+        data = "1\n2\n3\n"
+        path = self.write(data)
+        flags = ["--stdev", "--json", "--minmax", "--median"]
+        for args, stdin in [(flags, data), ([*flags[:2], path, *flags[2:]], "")]:
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [sys.executable, script, *args], input=stdin,
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual((result.returncode, result.stderr), (0, ""))
+                self.assertEqual(
+                    result.stdout,
+                    '{"count": 3, "mean": 2.0, "median": 2.0, "min": 1.0, "max": 3.0, "stdev": 1.0}\n',
                 )
 
 
