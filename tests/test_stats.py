@@ -207,5 +207,45 @@ class JsonTest(FileTestCase):
                 )
 
 
+class MedianTest(FileTestCase):
+    def test_odd_unsorted_input(self):
+        self.assertEqual(
+            run_main(["--median"], "9\n1\n3\n"),
+            (0, "count 3\nmean 4.33333\nmedian 3\n", ""),
+        )
+
+    def test_even_unsorted_file(self):
+        path = self.write("10\n2\n4\n8\n")
+        self.assertEqual(
+            run_main(["--median", path]),
+            (0, "count 4\nmean 6\nmedian 6\n", ""),
+        )
+
+    def test_single_number(self):
+        self.assertEqual(
+            run_main(["--median"], "-2.5\n"),
+            (0, "count 1\nmean -2.5\nmedian -2.5\n", ""),
+        )
+
+    def test_even_negative_and_zero(self):
+        self.assertEqual(
+            run_main(["--median"], "0\n-3\n"),
+            (0, "count 2\nmean -1.5\nmedian -1.5\n", ""),
+        )
+
+    def test_duplicates_and_repeated_flag_after_file(self):
+        path = self.write("4\n2\n2\n2\n")
+        self.assertEqual(
+            run_main([path, "--median", "--median"]),
+            (0, "count 4\nmean 2.5\nmedian 2\n", ""),
+        )
+
+    def test_g_format(self):
+        self.assertEqual(
+            run_main(["--median"], "1.23456789\n"),
+            (0, "count 1\nmean 1.23457\nmedian 1.23457\n", ""),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

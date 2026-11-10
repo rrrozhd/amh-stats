@@ -1,5 +1,6 @@
 """Summary statistics for numbers, one per line, read from a file or standard input."""
 import json
+import statistics
 import sys
 
 # The only tokens treated as options. Any other argument, whatever it starts
@@ -44,7 +45,8 @@ def compute(numbers, options):
         ("count", len(numbers)),
         ("mean", sum(numbers) / len(numbers)),
     ]
-    # --median: append ("median", value) here.
+    if "--median" in options:
+        pairs.append(("median", statistics.median(numbers)))
     # --minmax: append ("min", value) and ("max", value) here.
     # --stdev: append ("stdev", value) here.
     return pairs
