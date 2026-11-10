@@ -1,4 +1,5 @@
 """Summary statistics for numbers, one per line, read from a file or standard input."""
+import math
 import statistics
 import sys
 
@@ -47,7 +48,13 @@ def compute(numbers, options):
     # --median: append ("median", value) here.
     # --minmax: append ("min", value) and ("max", value) here.
     if "--stdev" in options:
-        pairs.append(("stdev", statistics.stdev(numbers) if len(numbers) > 1 else 0.0))
+        if len(numbers) == 1:
+            stdev = 0.0
+        elif not all(math.isfinite(value) for value in numbers):
+            stdev = math.nan
+        else:
+            stdev = statistics.stdev(numbers)
+        pairs.append(("stdev", stdev))
     return pairs
 
 

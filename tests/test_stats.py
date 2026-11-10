@@ -190,6 +190,23 @@ class StdevTest(FileTestCase):
     def test_without_flag_has_no_stdev_line(self):
         self.assertEqual(run_main([], "-1\n1\n"), (0, "count 2\nmean 0\n", ""))
 
+    def test_nonfinite_sample_prints_nan(self):
+        for value in ("nan", "inf", "-inf", "1e309"):
+            with self.subTest(value=value):
+                mean = format((1.0 + float(value)) / 2, "g")
+                self.assertEqual(
+                    run_main(["--stdev"], f"1\n{value}\n"),
+                    (0, f"count 2\nmean {mean}\nstdev nan\n", ""),
+                )
+
+    def test_nonfinite_singleton_still_prints_zero(self):
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value):
+                self.assertEqual(
+                    run_main(["--stdev"], f"{value}\n"),
+                    (0, f"count 1\nmean {value}\nstdev 0\n", ""),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
