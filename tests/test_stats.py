@@ -416,5 +416,86 @@ class CombinationTest(FileTestCase):
                 )
 
 
+class StdevOverflowTest(FileTestCase):
+    """--stdev on finite input whose deviation does not fit in a float."""
+
+    HUGE = "1.7e308\n-1.7e308\n"
+    ERROR = "stats.py: stdev too large\n"
+
+    def cli(self, args, stdin):
+        result = subprocess.run(
+            [sys.executable, os.path.abspath(stats.__file__), *args], input=stdin,
+            capture_output=True, text=True, check=False,
+        )
+        return result.returncode, result.stdout, result.stderr
+
+    def test_overflow_is_a_clean_error(self):
+        path = self.write(self.HUGE)
+        for flags in (["--stdev"], ["--json", "--stdev"],
+                      ["--median", "--minmax", "--stdev"],
+                      ["--stdev", "--json", "--minmax", "--median"]):
+            for args, stdin in ((flags, self.HUGE), ([*flags, path], "")):
+                with self.subTest(args=args):
+                    self.assertEqual(self.cli(args, stdin), (1, "", self.ERROR))
+
+    def test_same_input_without_stdev_is_unchanged(self):
+        self.assertEqual(self.cli([], self.HUGE), (0, "count 2\nmean 0\n", ""))
+        self.assertEqual(
+            self.cli(["--median", "--minmax"], self.HUGE),
+            (0, "count 2\nmean 0\nmedian 0\nmin -1.7e+308\nmax 1.7e+308\n", ""),
+        )
+        self.assertEqual(
+            self.cli(["--json"], self.HUGE), (0, '{"count": 2, "mean": 0.0}\n', ""),
+        )
+
+    def test_large_representable_deviation_still_prints(self):
+        data = "1e150\n-1e150\n"
+        self.assertEqual(
+            self.cli(["--stdev"], data), (0, "count 2\nmean 0\nstdev 1.41421e+150\n", ""),
+        )
+        self.assertEqual(
+            self.cli(["--json", "--stdev"], data),
+            (0, '{"count": 2, "mean": 0.0, "stdev": 1.41421e+150}\n', ""),
+        )
+
+    def test_near_limit_is_a_result_or_the_clean_error(self):
+        # Whether 1e308/-1e308 fits depends on the Python version's
+        # statistics.stdev; either way there must be no traceback.
+        self.assertIn(
+            self.cli(["--stdev"], "1e308\n-1e308\n"),
+            [(0, "count 2\nmean 0\nstdev 1.41421e+308\n", ""), (1, "", self.ERROR)],
+        )
+
+    def test_guard_does_not_depend_on_where_this_python_overflows(self):
+        for flags in (["--stdev"], ["--json", "--stdev"]):
+            with self.subTest(flags=flags), \
+                    mock.patch("statistics.stdev", side_effect=OverflowError), \
+                    mock.patch("sys.stdin", io.StringIO("1\n2\n")), \
+                    redirect_stdout(io.StringIO()) as out:
+                with self.assertRaises(SystemExit) as caught:
+                    stats.main(["stats.py", *flags])
+                self.assertEqual(caught.exception.code, "stats.py: stdev too large")
+                self.assertEqual(out.getvalue(), "")
+
+    def test_only_overflow_is_caught(self):
+        with mock.patch("statistics.stdev", side_effect=ValueError("other")):
+            with self.assertRaises(ValueError):
+                stats.compute([1.0, 2.0], {"--stdev"})
+
+    def test_equal_huge_values_are_not_rejected(self):
+        self.assertEqual(
+            self.cli(["--stdev"], "1.7e308\n1.7e308\n"),
+            (0, "count 2\nmean inf\nstdev 0\n", ""),
+        )
+
+    def test_other_stdev_branches_are_untouched(self):
+        self.assertEqual(
+            self.cli(["--stdev"], "1.7e308\n"), (0, "count 1\nmean 1.7e+308\nstdev 0\n", ""),
+        )
+        self.assertEqual(
+            self.cli(["--stdev"], "1.7e308\ninf\n"), (0, "count 2\nmean inf\nstdev nan\n", ""),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

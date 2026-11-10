@@ -57,7 +57,11 @@ def compute(numbers, options):
         elif not all(math.isfinite(value) for value in numbers):
             stdev = math.nan
         else:
-            stdev = statistics.stdev(numbers)
+            try:
+                stdev = statistics.stdev(numbers)
+            except OverflowError:
+                # Finite input too large for statistics.stdev on this Python.
+                raise SystemExit("stats.py: stdev too large")
         pairs.append(("stdev", stdev))
     return pairs
 
