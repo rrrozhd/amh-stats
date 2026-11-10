@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -146,6 +147,153 @@ class ComputeRenderTest(unittest.TestCase):
         with redirect_stdout(out):
             stats.render_plain([("count", 3), ("mean", 5 / 3), ("max", 1e20), ("min", 2.0)])
         self.assertEqual(out.getvalue(), "count 3\nmean 1.66667\nmax 1e+20\nmin 2\n")
+
+
+class JsonTest(FileTestCase):
+    def test_json_alone_rounds_mean_and_preserves_count_type(self):
+        code, out, err = run_main(["--json"], "1\n2\n2\n")
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out, '{"count": 3, "mean": 1.66667}\n')
+        result = json.loads(out)
+        self.assertEqual(list(result), ["count", "mean"])
+        self.assertIs(type(result["count"]), int)
+        self.assertIs(type(result["mean"]), float)
+
+    def test_json_whole_and_scientific_values(self):
+        for number, expected in [("3", 3.0), ("0.000000123456789", 1.23457e-7), ("12345678.9", 12345700.0)]:
+            with self.subTest(number=number):
+                code, out, err = run_main(["--json"], number + "\n")
+                self.assertEqual((code, err), (0, ""))
+                self.assertEqual(len(out.splitlines()), 1)
+                result = json.loads(out)
+                self.assertEqual(result, {"count": 1, "mean": expected})
+                self.assertIs(type(result["mean"]), float)
+
+    def test_json_matches_plain_for_requested_options(self):
+        path = self.write("1\n2\n2\n")
+        flags = ["--stdev", "--minmax", "--median"]
+        plain_code, plain, plain_err = run_main([*flags, path])
+        code, out, err = run_main(["--json", path, *flags, "--json"])
+        expected = {key: int(value) if key == "count" else float(value)
+                    for key, value in (line.split() for line in plain.splitlines())}
+        self.assertEqual((code, err), (plain_code, plain_err))
+        self.assertEqual(len(out.splitlines()), 1)
+        result = json.loads(out)
+        self.assertEqual(result, expected)
+        self.assertEqual(list(result), list(expected))
+
+    def test_json_errors_match_plain_and_emit_no_stdout(self):
+        missing = os.path.join(self.dir, "absent.txt")
+        for args, stdin in [([], ""), ([missing], ""), (["a", "b"], ""), ([""], "")]:
+            with self.subTest(args=args):
+                expected = run_main(args, stdin)
+                self.assertEqual(expected[1], "")
+                self.assertEqual(run_main(["--json", *args], stdin), expected)
+
+    def test_json_malformed_line_keeps_error_and_stdout_empty(self):
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO("1\nbad\n")), redirect_stdout(out), redirect_stderr(err):
+            with self.assertRaises(SystemExit) as caught:
+                stats.main(["stats.py", "--json"])
+        self.assertEqual(caught.exception.code, "stats.py: line 2: not a number: 'bad'")
+        self.assertEqual((out.getvalue(), err.getvalue()), ("", ""))
+
+    def test_json_preserves_default_nonfinite_tokens(self):
+        for number, token in [("nan", "NaN"), ("inf", "Infinity"), ("-inf", "-Infinity")]:
+            with self.subTest(number=number):
+                self.assertEqual(
+                    run_main(["--json"], number + "\n"),
+                    (0, '{"count": 1, "mean": ' + token + '}\n', ""),
+                )
+
+
+class MedianTest(FileTestCase):
+    def test_odd_unsorted_input(self):
+        self.assertEqual(
+            run_main(["--median"], "9\n1\n3\n"),
+            (0, "count 3\nmean 4.33333\nmedian 3\n", ""),
+        )
+
+    def test_even_unsorted_file(self):
+        path = self.write("10\n2\n4\n8\n")
+        self.assertEqual(
+            run_main(["--median", path]),
+            (0, "count 4\nmean 6\nmedian 6\n", ""),
+        )
+
+    def test_single_number(self):
+        self.assertEqual(
+            run_main(["--median"], "-2.5\n"),
+            (0, "count 1\nmean -2.5\nmedian -2.5\n", ""),
+        )
+
+    def test_even_negative_and_zero(self):
+        self.assertEqual(
+            run_main(["--median"], "0\n-3\n"),
+            (0, "count 2\nmean -1.5\nmedian -1.5\n", ""),
+        )
+
+    def test_duplicates_and_repeated_flag_after_file(self):
+        path = self.write("4\n2\n2\n2\n")
+        self.assertEqual(
+            run_main([path, "--median", "--median"]),
+            (0, "count 4\nmean 2.5\nmedian 2\n", ""),
+        )
+
+    def test_g_format(self):
+        self.assertEqual(
+            run_main(["--median"], "1.23456789\n"),
+            (0, "count 1\nmean 1.23457\nmedian 1.23457\n", ""),
+        )
+
+
+class MinMaxTest(FileTestCase):
+    def test_minmax_file_unsorted(self):
+        path = self.write("3\n1\n2\n")
+        self.assertEqual(
+            run_main(["--minmax", path]),
+            (0, "count 3\nmean 2\nmin 1\nmax 3\n", ""),
+        )
+
+    def test_minmax_after_file_and_repeated(self):
+        path = self.write("3\n1\n2\n")
+        self.assertEqual(
+            run_main([path, "--minmax", "--minmax"]),
+            (0, "count 3\nmean 2\nmin 1\nmax 3\n", ""),
+        )
+
+    def test_minmax_stdin_negatives(self):
+        self.assertEqual(
+            run_main(["--minmax"], "-1.5\n-7\n2\n"),
+            (0, "count 3\nmean -2.16667\nmin -7\nmax 2\n", ""),
+        )
+
+    def test_minmax_single_number(self):
+        self.assertEqual(
+            run_main(["--minmax"], "4.25\n"),
+            (0, "count 1\nmean 4.25\nmin 4.25\nmax 4.25\n", ""),
+        )
+
+    def test_minmax_uses_g_format(self):
+        self.assertEqual(
+            run_main(["--minmax"], "0.000001234567\n123456789\n"),
+            (0, "count 2\nmean 6.17284e+07\nmin 1.23457e-06\nmax 1.23457e+08\n", ""),
+        )
+
+    def test_minmax_pairs_are_floats_in_fixed_slot(self):
+        pairs = stats.compute([2.0, -1.0, 5.0], {"--minmax"})
+        self.assertEqual(pairs, [("count", 3), ("mean", 2.0), ("min", -1.0), ("max", 5.0)])
+        self.assertIsInstance(pairs[2][1], float)
+        self.assertIsInstance(pairs[3][1], float)
+
+    def test_minmax_keeps_errors(self):
+        self.assertEqual(run_main(["--minmax"], ""), (1, "", "stats.py: no numbers\n"))
+        self.assertEqual(
+            run_main(["--minmax", "a", "b"]), (2, "", "usage: stats.py [FILE]\n")
+        )
+
+    def test_without_minmax_no_min_max_lines(self):
+        self.assertEqual(run_main([], "3\n1\n2\n"), (0, "count 3\nmean 2\n", ""))
 
 
 class StdevTest(FileTestCase):

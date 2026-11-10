@@ -1,4 +1,5 @@
 """Summary statistics for numbers, one per line, read from a file or standard input."""
+import json
 import math
 import statistics
 import sys
@@ -45,8 +46,11 @@ def compute(numbers, options):
         ("count", len(numbers)),
         ("mean", sum(numbers) / len(numbers)),
     ]
-    # --median: append ("median", value) here.
-    # --minmax: append ("min", value) and ("max", value) here.
+    if "--median" in options:
+        pairs.append(("median", statistics.median(numbers)))
+    if "--minmax" in options:
+        pairs.append(("min", min(numbers)))
+        pairs.append(("max", max(numbers)))
     if "--stdev" in options:
         if len(numbers) == 1:
             stdev = 0.0
@@ -65,6 +69,13 @@ def render_plain(pairs):
             print(f"{key} {value}")
         else:
             print(f"{key} {value:g}")
+
+
+def render_json(pairs):
+    """Print one object with the same numeric values as the plain output."""
+    values = {key: value if key == "count" else float(format(value, "g"))
+              for key, value in pairs}
+    print(json.dumps(values))
 
 
 def main(argv):
@@ -86,8 +97,10 @@ def main(argv):
         print("stats.py: no numbers", file=sys.stderr)
         return 1
     pairs = compute(numbers, options)
-    # --json: choose render_json(pairs) here when "--json" is in options.
-    render_plain(pairs)
+    if "--json" in options:
+        render_json(pairs)
+    else:
+        render_plain(pairs)
     return 0
 
 
