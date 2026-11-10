@@ -41,8 +41,10 @@ FILE exits with status 2. Errors go to stderr and produce no statistics on stdou
 Nonfinite values (`nan`, `inf`) remain accepted. A multi-value sample containing
 a nonfinite value prints `stdev nan`; a singleton prints `stdev 0`. JSON follows `json.dumps`
 defaults and may contain `NaN` or `Infinity`, which strict JSON readers reject.
-Min/max with NaN can depend on input order. Very large finite samples can overflow
-`statistics.stdev` on older Python versions such as 3.9.
+Min/max with NaN can depend on input order. When finite values are so large
+that `statistics.stdev` overflows, `--stdev` prints `stats.py: stdev too large` on
+stderr and exits with status 1; how large that is depends on the Python version
+(3.9 overflows sooner than 3.12).
 
 Run the tests with `python -m unittest`. They cover individual options, all option
 subsets and orders, FILE placement, JSON values and no-option compatibility.
